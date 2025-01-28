@@ -118,6 +118,7 @@ Note that ts_inflow_data has information on start, end and frequency. We will di
 Let's see the plots generated with *autoplot()*.
 
 ```{r}
+
 autoplot(ts_inflow_data) +
   xlab("Time") +
   ylab("Inflow") +
