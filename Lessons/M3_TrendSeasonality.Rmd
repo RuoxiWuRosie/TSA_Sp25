@@ -30,9 +30,9 @@ library(tseries)
 Let's continue working with our inflow data for reservoirs in Brazil. 
 
 ```{r}
-
+here()
 #Importing time series data from text file#
-raw_inflow_data <- read.table(file="../Data/inflowtimeseries.txt",header=FALSE,skip=0)
+raw_inflow_data <- read.table(file="/home/guest/TSA_Sp25/Data/inflowtimeseries.txt",header=FALSE,skip=0)
 
 #Trim the table to include only columns you need
 nhydro <- ncol(raw_inflow_data)-2
@@ -137,20 +137,26 @@ Let's identify and remove trend component. You start by fitting a linear model t
 
 ```{r}
 #Create vector t
-
-
-
-#Fit a linear trend to TS of iHP
-
+iHP <- 1
+t <- c(1:nobs)
+#Fit a linear trend to TS, lm function needs a data frame object
+linear_trend_model=lm(inflow_data[, iHP+1] ~t) # +1 refers to the data column
+summary(linear_trend_model)
+#first coefficient is the intercept term or beta0
+beta0=as.numeric(linear_trend_model$coefficients[1])
+#second coefficient is the slope or beta1
+beta1=as.numeric(linear_trend_model$coefficients[2])
 
 ```
 
 
 ```{r}
 #remove the trend from series
-
-
-
+linear_trend <- (beta0+beta1*t)
+detrend_inflow <- inflow_data[, iHP+1] - linear_trend
+ts_detrend <- ts(detrend_inflow, start = c(1931,1), frequency = 12)
+autoplot((ts_inflow_data[,iHP+1])+ 
+           autolayer(ts_detrend, series = "Detrended"))
 ```
 
 Note that blue line is our original series, red line is our trend, green line is our original series minus the trend or in other words the detrended series. And in orange is the trend line for the detrended series which has slope 0 meaning we were able to effectively eliminate the trend with a linear model.
