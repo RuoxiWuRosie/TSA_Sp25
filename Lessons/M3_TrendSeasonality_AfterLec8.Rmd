@@ -30,9 +30,9 @@ library(tseries)
 Let's continue working with our inflow data for reservoirs in Brazil. 
 
 ```{r}
-here()
+
 #Importing time series data from text file#
-raw_inflow_data <- read.table(file="/home/guest/TSA_Sp25/Data/inflowtimeseries.txt",header=FALSE,skip=0)
+raw_inflow_data <- read.table(file="./Data/inflowtimeseries.txt",header=FALSE,skip=0)
 
 #Trim the table to include only columns you need
 nhydro <- ncol(raw_inflow_data)-2
@@ -109,7 +109,7 @@ Fixed!
 Many of the functions we will use require a time series object. You can transform your data in a time series using the function *ts()*. 
 
 ```{r}
-ts_inflow_data <- ts(inflow_data[,2:(2+nhydro-1)],frequency=12) 
+ts_inflow_data <- ts(inflow_data[,2:(2+nhydro-1)],start=c(1931,1),frequency=12) 
 #note that we are only transforming columns with inflow data, not the date columns  #start=my_date[1],end=my_date[nobs],
 head(ts_inflow_data,15)
 ```
@@ -136,29 +136,30 @@ for(i in 1:nhydro){
 Let's identify and remove trend component. You start by fitting a linear model to $Y_t=\beta_0+\beta_1*t+\epsilon_t$. 
 
 ```{r}
+iHP <- 4
 #Create vector t
-iHP <- 1
 t <- c(1:nobs)
-#Fit a linear trend to TS, lm function needs a data frame object
-linear_trend_model=lm(inflow_data[, iHP+1] ~t) # +1 refers to the data column
+
+#Fit a linear trend to TS of iHP
+linear_trend_model <- lm(inflow_data[,iHP+1] ~ t) # + 1 refers to date column
 summary(linear_trend_model)
-#first coefficient is the intercept term or beta0
-beta0=as.numeric(linear_trend_model$coefficients[1])
-#second coefficient is the slope or beta1
-beta1=as.numeric(linear_trend_model$coefficients[2])
+
+beta0 <- as.numeric(linear_trend_model$coefficients[1])
+beta1 <- as.numeric(linear_trend_model$coefficients[2])
+
+#detrend inflow
+linear_trend <- beta0 + beta1 * t
+ts_linear <- ts(linear_trend,star=c(1931,1),frequency=12)
+
+detrend_inflow <- inflow_data[,iHP+1] - linear_trend
+ts_detrend <- ts(detrend_inflow, start = c(1931,1),frequency = 12)
+  
+#Plot
+autoplot(ts_inflow_data[,iHP],color="darkblue")+
+  autolayer(ts_detrend,series="Detrended",color="green")+
+  autolayer(ts_linear,series="Linear Component",color="red")
 
 ```
-
-
-```{r}
-#remove the trend from series
-linear_trend <- (beta0+beta1*t)
-detrend_inflow <- inflow_data[, iHP+1] - linear_trend
-ts_detrend <- ts(detrend_inflow, start = c(1931,1), frequency = 12)
-autoplot((ts_inflow_data[,iHP+1])+ 
-           autolayer(ts_detrend, series = "Detrended"))
-```
-
 Note that blue line is our original series, red line is our trend, green line is our original series minus the trend or in other words the detrended series. And in orange is the trend line for the detrended series which has slope 0 meaning we were able to effectively eliminate the trend with a linear model.
 
 
@@ -168,6 +169,26 @@ Now let's shift attention to the seasonal component.
 
 ```{r}
 #Use seasonal means model
+dummies <- seasonaldummy(ts_detrend)
+
+seas_means_model <- lm(detrend_inflow ~ dummies)
+summary(seas_means_model)
+
+beta_intercept <-seas_means_model$coefficients[1]
+beta_coeff <-seas_means_model$coefficients[2:12]
+
+inflow_seas_comp <- array(0,nobs)
+for(i in 1:nobs){
+  inflow_seas_comp[i] <- beta_intercept + beta_coeff %*% dummies[i,]
+}
+
+deseason_inflow_data <- detrend_inflow - inflow_seas_comp
+
+ts_deseason_inflow_data <- ts(deseason_inflow_data,start=c(1931,1),
+                              frequency = 12)
+
+autoplot(ts_inflow_data[,iHP])+
+  autolayer(ts_deseason_inflow_data,color="red")
 
 
 ```
@@ -182,8 +203,18 @@ Fit trend and seasonal for the other variables HP2, HP3, ...
 Some test only work for non-seasonal data. So let's create another series with yearly averages for inflow.
 
 ```{r}
+iHP <- 1
 #Group data in yearly steps instances
+inflow_data_matrix <- matrix(ts_inflow_data[,iHP],byrow=FALSE,nrow=12)
+inflow_data_yearly <- colMeans(inflow_data_matrix)
 
+my_year <- c(1931:2010)
+
+inflow_data_yearly <- data.frame(my_year,"inflow_data"=inflow_data_yearly)
+
+ggplot(inflow_data_yearly, aes(x=my_year,y=inflow_data))+
+  geom_line(color="blue")+
+  geom_smooth(color="red",method="lm")
 
 ```
 
@@ -195,9 +226,13 @@ Check for deterministic trend.
 
 #Since I have seasonal data I cannot use the simple MannKendall()
 #another example of functions that need a ts object
+summary(SeasonalMannKendall(ts_inflow_data[,iHP]))
 
+library(trend)
+summary(smk.test(ts_inflow_data[,iHP]))
 
 #Use yearly date to run Mann Kendall
+summary(MannKendall(inflow_data_yearly$inflow_data))
 
 ```
 
@@ -208,9 +243,10 @@ Also check for deterministic trend, for non-seasonal data only.
 ```{r}
 #Deterministic trend with Spearman Correlation Test
 print("Results from Spearman Correlation")
-
+print(cor(inflow_data_yearly$inflow_data,my_year,method="pearson"))
 
 #with cor.test you can get test statistics
+print(cor.test(inflow_data_yearly$inflow_data,my_year,method="spearman"))
 
 ```
 
@@ -221,9 +257,12 @@ Used to detect stochastic trend.
 ```{r}
 #Null hypothesis is that data has a unit root
 print("Results for ADF test/n")
+print(adf.test(ts_inflow_data[,iHP],alternative = "stationary")) #stationary over stochastic trend
 
 #Now let's try the yearly data
 print("Results for ADF test on yearly data/n")
+print(adf.test(inflow_data_yearly$inflow_data,alternative = "stationary")) #stationary over stochastic trend
+
 
 ```
 
