@@ -1,0 +1,249 @@
+---
+title: "ENV 797 - Time Series Analysis for Energy and Environment Applications | Spring 2025"
+subtitle: "Assignment 7 - Due date 03/06/25"
+author: "Rosie Wu"
+output: pdf_document
+geometry: margin=2.54cm
+---
+
+## Directions
+
+You should open the .rmd file corresponding to this assignment on RStudio. The file is available on our class repository on Github. And to do so you will need to fork our repository and link it to your RStudio.  
+
+Once you have the file open on your local machine the first thing you will do is rename the file such that it includes your first and last name (e.g., "LuanaLima_TSA_A07_Sp25.Rmd"). Then change "Student Name" on line 4 with your name. 
+
+Then you will start working through the assignment by  **creating code and output** that answer each question. Be sure to use this assignment document. Your report should contain the answer to each question and any plots/tables you obtained (when applicable).
+
+When you have completed the assignment, **Knit** the text and code into a single PDF file. Submit this pdf using Sakai. 
+
+Packages needed for this assignment: "forecast","tseries". Do not forget to load them before running your script, since they are NOT default packages.\\
+
+## Set up
+
+```{r}
+#Load/install required package here
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(cowplot)
+library(trend)
+```
+
+## Importing and processing the data set
+
+Consider the data from the file "Net_generation_United_States_all_sectors_monthly.csv". The data corresponds to the monthly net generation from January 2001 to December 2020 by source and is provided by the US Energy Information and Administration. **You will work with the natural gas column only**.
+
+
+### Q1
+
+Import the csv file and create a time series object for natural gas. Make you sure you specify the **start=** and **frequency=** arguments. Plot the time series over time, ACF and PACF.
+
+```{r}
+net_gen_data <- read.csv(file="./Data/Net_generation_United_States_all_sectors_monthly.csv",header=TRUE,skip=4)
+
+ng_data <- net_gen_data[, c("Month", "natural.gas.thousand.megawatthours")]
+
+# convert the month column to a proper format
+ng_data$Month <- parse_date_time(ng_data$Month, orders = "my")
+```
+
+
+```{r}
+# Extract the Natural Gas values and create a time series
+natural_gas_ts <- ts(ng_data$natural.gas.thousand.megawatthours, start = c(2001, 1), frequency = 12)
+
+# Plot the time series
+ts_plot1 <- plot(natural_gas_ts, main = "Monthly Natural Gas Net Generation (2001-2020)", 
+     xlab = "Year", ylab = "Net Generation (in GWh)")
+
+# ACF Plot
+acf_plot1 <- Acf(ng_data$natural.gas.thousand.megawatthours, 
+    lag = 36,  plot = TRUE)
+
+# PACF Plot
+pacf_plot1 <-  Pacf(ng_data$natural.gas.thousand.megawatthours, 
+    lag = 36,  plot = TRUE)
+```
+
+### Q2
+
+Using the $decompose()$ and the $seasadj()$ functions create a series without the seasonal component, i.e., a deseasonalized natural gas series. Plot the deseasonalized series over time and corresponding ACF and PACF. Compare with the plots obtained in Q1.
+
+```{r}
+# Decompose the time series
+decomposed_ts <- decompose(natural_gas_ts, type = "additive")
+
+# Deseasonalize the time series using seasadj()
+deseasonalized_ts <- seasadj(decomposed_ts)
+
+# Plot the deseasonalized series
+deseasoned_plot <- plot(deseasonalized_ts, main = "Deseasonalized Natural Gas Net Generation", 
+     xlab = "Year", ylab = "Net Generation (in Thousand Megawatthours)")
+print(deseasoned_plot)
+
+# updated ACF Plot
+acf_plot2 <- Acf(deseasonalized_ts, lag = 36, plot = TRUE)
+print(acf_plot2)
+
+# updated PACF Plot
+pacf_plot2 <- Pacf(deseasonalized_ts, lag = 36, plot = TRUE)
+print(pacf_plot2)
+```
+> The deseasonalized times series in this question shows a more random pattern than the times series plot in question 1. Yet both of the time series are sloping down. The deseasonalized ACF in Q2 shows less seasonal patterns/ peaks, while the original ACF graph showed more seasonal patterns and peaks. The Deseasoned PACF also showed an immediate drop after the first lag, but still being positive, while the original PACF shows that the value of PACF drop to negative after lag 1, while could indicate a AR model?
+
+
+
+## Modeling the seasonally adjusted or deseasonalized series
+
+### Q3
+
+Run the ADF test and Mann Kendall test on the deseasonalized data from Q2. Report and explain the results.
+
+```{r}
+adf_test3 <- adf.test(deseasonalized_ts)
+print(adf_test3)
+
+mk_test3 <- mk.test(deseasonalized_ts)
+print(mk_test3)
+
+```
+> ADF test: Null for this test is that the time series of natural gas generation has a unit root (it's non-stationary). Alternative: The time series is stationary. The p-value for this test turns out to be 0.01 (<0.05), which means we can reject the null and state that the deseasoned time series of natural gas generation could be stationary. 
+> Mann-Kendall trend test: Null: no trend in time series. Alternative: there is a trend in time series. p-value in test is much less than 0.05, so we reject the null and state that there is a significant trend in the deseasoned time series. The negative value of S also indicates that the trend is slowly decreasing, which matches the previous results of the ts plots.
+
+
+### Q4
+
+Using the plots from Q2 and test results from Q3 identify the ARIMA model parameters $p,d$ and $q$. Note that in this case because you removed the seasonal component prior to identifying the model you don't need to worry about seasonal component. Clearly state your criteria and any additional function in R you might use. DO NOT use the $auto.arima()$ function. You will be evaluated on ability to understand the ACF/PACF plots and interpret the test results.
+
+> From the ADF test, we know that the series is stationary, so d=0
+> From the PACF plot of the deseasonalized series, the PACF value cuts off at lag 2, so the p = 2
+> From the ACF plot of the deseasonalized series, the ACF has no significant cut offs/ spikes, so q=0.
+
+```{r}
+
+```
+
+### Q5
+
+Use `Arima()` from package "forecast" to fit an ARIMA model to your series considering the order estimated in Q4. You should allow constants in the model, i.e., `include.mean = TRUE` or `include.drift=TRUE`. **Print the coefficients** in your report. Hint: use the `cat()` or `print()` function to print.
+
+```{r}
+# values from observing the previous plots
+p <- 2
+d <-0
+q <- 0
+# Fit the ARIMA model with a constant term
+arima_model5 <- Arima(deseasonalized_ts, order = c(p, d, q), include.mean = TRUE)
+
+# Print the coefficients of the fitted model
+cat("ARIMA Model Coefficients:\n")
+print(arima_model5$coef)
+
+```
+
+### Q6
+
+Now plot the residuals of the ARIMA fit from Q5 along with residuals ACF and PACF on the same window. You may use the $checkresiduals()$ function to automatically generate the three plots. Do the residual series look like a white noise series? Why?
+
+```{r}
+# Use checkresiduals() to generate the residual plots
+checkresiduals(arima_model5)
+```
+> The deseasoned series do display some white noise. The residuals plot show some randomness overtime, as it fluctuates around 0 with no visible patterns or trends. ACF plot shows that there are some significant values (not very significant though) in some lags, so not all autocorrelations lie within the confidence intervals, so this doesn't necessarily indicate white noise, but it's relatively close. Accoding to the histogram of residuals, it shows a normal distribution around mean of zero, which indicates white noise.
+
+## Modeling the original series (with seasonality)
+
+### Q7
+
+Repeat Q3-Q6 for the original series (the complete series that has the seasonal component). Note that when you model the seasonal series, you need to specify the seasonal part of the ARIMA model as well, i.e., $P$, $D$ and $Q$.
+
+```{r}
+# first do the tests on the original series
+adf_test7 <- adf.test(natural_gas_ts)
+print(adf_test7)
+
+mk_test7 <- mk.test(natural_gas_ts)
+print(mk_test7)
+```
+
+> ADF test: Null for this test is that the time series of natural gas generation has a unit root (it's non-stationary). Alternative: The time series is stationary. The p-value for this test turns out to be 0.01 (<0.05), which means we can reject the null and state that the time series of natural gas generation could be stationary. 
+> Mann-Kendall trend test: Null: no trend in time series. Alternative: there is a trend in time series. p-value in test is much less than 0.05, so we reject the null and state that there is a significant trend in the time series. The negative value of S also indicates that the trend is slowly decreasing, which matches the previous results of the ts plots.
+
+```{r}
+# updated ACF Plot
+acf_plot7 <- Acf(natural_gas_ts, lag = 36, plot = TRUE)
+print(acf_plot7)
+
+# updated PACF Plot
+pacf_plot7 <- Pacf(natural_gas_ts, lag = 36, plot = TRUE)
+print(pacf_plot7)
+```
+
+> From the ADF test, we know that the series is stationary, so d=0
+> From the PACF plot of the original series, the PACF value cuts off at lag 2, so the p = 2
+> From the ACF plot of the original series, the ACF has no significant cut offs/ spikes, so q=0.
+
+```{r}
+# values from observing the previous plots
+p <- 2
+d <-0
+q <- 0
+# define seasonal and non-sesonal arima model
+SARIMA_manual <- Arima(natural_gas_ts,
+                       # non-seasonal
+                       order=c(2,0,0),
+                       # seasonal
+                       seasonal=c(2,0,0),
+                       include.drift=FALSE)
+
+# Print the coefficients of the fitted model
+cat("ARIMA Model Coefficients:\n")
+print(SARIMA_manual$coef)
+
+```
+```{r}
+# Use checkresiduals() to generate the residual plots
+checkresiduals(SARIMA_manual)
+```
+> The original time series of the natural gas generation do display some white noise. The residuals plot show some randomness overtime, as it fluctuates around 0 with no siginificant patterns or trends. ACF plot shows significant values at lag 12 and 24, which displays some seasonality, so not all autocorrelations lie within the confidence intervals, so the autocorrelation doesn't necessarily indicate white noise. Accoding to the histogram of residuals, it shows a normal distribution around mean of zero, which indicates white noise. 
+
+
+### Q8
+
+Compare the residual series for Q7 and Q6. Can you tell which ARIMA model is better representing the Natural Gas Series? Is that a fair comparison? Explain your response.
+> The residuals visuals for Q7 and Q6 are similar, and I think the seasonal series ARIMA model can be slightly better for representing the Natural Gas generation. Because the original time series, the original ACF, as well as the PACF of the residuals of the original natural gas time series displays some degree of seasonality, so it might be reasonable to consider the seasonal components for representing the ARMA of the original natural gas series. Yet, it's not fair to compare the deasonalized and the seasonal ARIMA model.Seasonal models are more complex because they include additional parameters to model seasonality. Deseasonalized models are simpler but rely on the assumption that the seasonal component has been fully removed.
+
+```{r}
+
+```
+
+
+## Checking your model with the auto.arima()
+
+**Please** do not change your answers for Q4 and Q7 after you ran the $auto.arima()$. It is **ok** if you didn't get all orders correctly. You will not loose points for not ha
+ving the same order as the $auto.arima()$.
+
+### Q9
+
+Use the $auto.arima()$ command on the **deseasonalized series** to let R choose the model parameter for you. What's the order of the best ARIMA model? Does it match what you specified in Q4?
+
+```{r}
+# deseasoned arima
+auto.arima(deseasonalized_ts)
+```
+> The order of the deseasonlized series for the non-seasonal part is p=3, d=1, q=0, which didn't match my results/ interpretation of the plots unfortunately.
+
+### Q10
+
+Use the $auto.arima()$ command on the **original series** to let R choose the model parameters for you. Does it match what you specified in Q7?
+
+```{r}
+# original series
+auto.arima(natural_gas_ts)
+```
+
+> The order of the original series for the non-seasonal part is p=2, d=0, q=1, and for the seasonal component was P=2, D=1, Q=2, which didn't match my results/ interpretation of the plots unfortunately.
