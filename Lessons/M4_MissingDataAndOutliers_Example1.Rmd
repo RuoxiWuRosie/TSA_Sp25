@@ -161,6 +161,7 @@ ggplot(df_inflow_random, aes(x=date, y=inflow)) +
             geom_line() +
             geom_abline(slope=0,intercept=3*sd_inflow,color="red") +
             geom_abline(slope=0,intercept=-3*sd_inflow,color="red")
+# points outside the red are the potential outliers
 
 ggplot(df_inflow_random, aes(y=inflow)) +
             geom_boxplot() 
